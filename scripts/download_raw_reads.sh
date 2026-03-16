@@ -8,7 +8,7 @@
 mkdir -p /home/jjung/acinetobacter_mgx_2026/data/fastq
 
 for CRA in CRA010962 CRA010735 CRA010639; do
-    wget -r -np -nd -P /home/jjung/acinetobacter_mgx_2026/data/fastq/${CRA} \
+    wget -r -np -nd --continue -P /home/jjung/acinetobacter_mgx_2026/data/fastq/${CRA} \
          ftp://download.big.ac.cn/gsa/${CRA}/
 done
 
