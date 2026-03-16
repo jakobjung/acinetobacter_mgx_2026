@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=download_mNGS
 #SBATCH --partition=cpu
-#SBATCH --time=72:00:00
+#SBATCH --qos=long
 #SBATCH --mem=8G
 #SBATCH --cpus-per-task=4
 #SBATCH --output=download_%j.log
