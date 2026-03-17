@@ -4,6 +4,7 @@
 #SBATCH --qos=long
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=16
+#SBATCH --time=2-00:00:00
 #SBATCH --output=kraken2_%j.log
 
 set -euo pipefail
