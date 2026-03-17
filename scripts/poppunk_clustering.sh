@@ -22,13 +22,13 @@ mkdir -p ${OUTDIR}
 # --- 1. Create PopPUNK input file (tab-separated: name\tpath) ---
 INPUT_LIST=${OUTDIR}/poppunk_input.tsv
 
-echo "Creating input list..."
-> ${INPUT_LIST}
-find ${GENOMEDIR} -name "*.fna" | while read fna; do
-    name=$(basename $(dirname ${fna}))
-    echo -e "${name}\t${fna}" >> ${INPUT_LIST}
-done
-echo "Found $(wc -l < ${INPUT_LIST}) genomes"
+if [ -f "${INPUT_LIST}" ]; then
+    echo "Input list exists: $(wc -l < ${INPUT_LIST}) genomes"
+else
+    echo "Creating input list..."
+    find ${GENOMEDIR} -name "*.fna" | awk -F'/' '{print $(NF-1)"\t"$0}' > ${INPUT_LIST}
+    echo "Found $(wc -l < ${INPUT_LIST}) genomes"
+fi
 
 # --- 2. Create PopPUNK database (sketch genomes + calculate distances) ---
 echo "Creating PopPUNK database..."
