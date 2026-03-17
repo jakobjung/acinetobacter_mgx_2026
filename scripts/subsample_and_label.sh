@@ -23,111 +23,121 @@ REFS_FILE=${POPPUNK_DIR}/Acinetobacter_baumannii_v1_refs.refs
 
 mkdir -p ${OUTDIR}/fastas ${OUTDIR}/mlst
 
-# --- 1. Map PopPUNK refs to available FASTAs ---
-echo "Mapping PopPUNK refs to downloaded FASTAs..."
-> ${OUTDIR}/ref_to_fasta.tsv
-while read acc; do
-    # find matching FASTA (accession may have version suffix in folder name)
-    fasta=$(find ${GENOME_DIR}/${acc}* -name "*.fna" 2>/dev/null | head -1)
-    if [ -n "${fasta}" ]; then
-        echo -e "${acc}\t${fasta}" >> ${OUTDIR}/ref_to_fasta.tsv
-    fi
-done < ${REFS_FILE}
-echo "Mapped $(wc -l < ${OUTDIR}/ref_to_fasta.tsv) / $(wc -l < ${REFS_FILE}) refs to FASTAs"
+# --- 1. Build lookup of all available FASTAs (fast: single find) ---
+echo "Building FASTA lookup..."
+find ${GENOME_DIR} -name "*.fna" > ${OUTDIR}/all_fastas.txt
+# create mapping: accession_no_version -> fasta_path
+awk -F'/' '{
+    dir=$(NF-1)
+    sub(/\.[0-9]+$/, "", dir)
+    print dir"\t"$0
+}' ${OUTDIR}/all_fastas.txt > ${OUTDIR}/acc_to_fasta.tsv
+echo "Found $(wc -l < ${OUTDIR}/acc_to_fasta.tsv) FASTAs"
 
-# --- 2. Subsample max 30 genomes per SC ---
-echo "Subsampling max 30 per sequence cluster..."
-> ${OUTDIR}/subsampled_genomes.tsv
+# --- 2. Join PopPUNK clusters with available FASTAs, subsample max 30/SC ---
+echo "Joining clusters with FASTAs and subsampling..."
+python3 - ${OUTDIR} ${CLUSTER_CSV} ${REFS_FILE} ${OUTDIR}/acc_to_fasta.tsv << 'PYEOF'
+import sys
+from collections import defaultdict
 
-# get cluster assignments for refs that have FASTAs
-awk -F',' 'NR > 1' ${CLUSTER_CSV} | while IFS=',' read -r genome cluster; do
-    fasta=$(grep "^${genome}	" ${OUTDIR}/ref_to_fasta.tsv | cut -f2)
-    if [ -n "${fasta}" ]; then
-        echo -e "${genome}\t${cluster}\t${fasta}"
-    fi
-done > ${OUTDIR}/genome_cluster_fasta.tsv
+outdir = sys.argv[1]
+cluster_csv = sys.argv[2]
+refs_file = sys.argv[3]
+acc_fasta_tsv = sys.argv[4]
 
-# subsample: take up to 30 per cluster
-awk -F'\t' '{
-    cluster=$2
-    count[cluster]++
-    if (count[cluster] <= 30) print
-}' ${OUTDIR}/genome_cluster_fasta.tsv > ${OUTDIR}/subsampled_genomes.tsv
+# load fasta lookup: accession (no version) -> path
+acc_to_fasta = {}
+with open(acc_fasta_tsv) as f:
+    for line in f:
+        acc, fasta = line.strip().split("\t")
+        acc_to_fasta[acc] = fasta
 
-TOTAL=$(wc -l < ${OUTDIR}/subsampled_genomes.tsv)
-CLUSTERS=$(cut -f2 ${OUTDIR}/subsampled_genomes.tsv | sort -u | wc -l)
-echo "Subsampled: ${TOTAL} genomes across ${CLUSTERS} clusters"
+# load refs list
+refs = set()
+with open(refs_file) as f:
+    for line in f:
+        refs.add(line.strip())
+
+# load cluster assignments for refs
+cluster_genomes = defaultdict(list)
+with open(cluster_csv) as f:
+    next(f)  # skip header
+    for line in f:
+        genome, cluster = line.strip().split(",")
+        if genome in refs and genome in acc_to_fasta:
+            cluster_genomes[cluster].append((genome, acc_to_fasta[genome]))
+
+# subsample max 30 per cluster
+with open(f"{outdir}/subsampled_genomes.tsv", "w") as out:
+    total = 0
+    for cluster, genomes in sorted(cluster_genomes.items()):
+        for genome, fasta in genomes[:30]:
+            out.write(f"{genome}\t{cluster}\t{fasta}\n")
+            total += 1
+
+print(f"Subsampled: {total} genomes across {len(cluster_genomes)} clusters")
+PYEOF
+
+echo "$(wc -l < ${OUTDIR}/subsampled_genomes.tsv) genomes subsampled"
 
 # --- 3. Copy subsampled FASTAs ---
 echo "Copying subsampled FASTAs..."
-while IFS=$'\t' read -r genome cluster fasta; do
-    cp ${fasta} ${OUTDIR}/fastas/${genome}.fna
-done < ${OUTDIR}/subsampled_genomes.tsv
+cut -f1,3 ${OUTDIR}/subsampled_genomes.tsv | while IFS=$'\t' read -r genome fasta; do
+    cp "${fasta}" "${OUTDIR}/fastas/${genome}.fna"
+done
+echo "Copied $(ls ${OUTDIR}/fastas/*.fna | wc -l) FASTAs"
 
-# --- 4. Run mlst to determine sequence types ---
+# --- 4. Run mlst ---
 echo "Running mlst on subsampled genomes..."
 mlst --threads ${THREADS} ${OUTDIR}/fastas/*.fna > ${OUTDIR}/mlst/mlst_results.tsv
-echo "MLST done."
+echo "MLST done: $(wc -l < ${OUTDIR}/mlst/mlst_results.tsv) results"
 
-# --- 5. Create SC labels (cluster -> dominant ST) ---
-echo "Labelling clusters by dominant ST..."
-python3 << 'PYEOF'
-import csv
+# --- 5. Label clusters by dominant ST and create Themisto files ---
+echo "Labelling clusters and creating Themisto input..."
+python3 - ${OUTDIR} << 'PYEOF'
+import sys
 from collections import defaultdict, Counter
+
+outdir = sys.argv[1]
 
 # load mlst results
 mlst = {}
-with open("${OUTDIR}/mlst/mlst_results.tsv") as f:
+with open(f"{outdir}/mlst/mlst_results.tsv") as f:
     for line in f:
         parts = line.strip().split("\t")
         genome = parts[0].split("/")[-1].replace(".fna", "")
-        st = parts[2]  # ST column
+        st = parts[2]
         mlst[genome] = st
 
-# load subsampled genomes with cluster assignments
+# load subsampled genomes
 cluster_sts = defaultdict(list)
-with open("${OUTDIR}/subsampled_genomes.tsv") as f:
+genomes_info = []
+with open(f"{outdir}/subsampled_genomes.tsv") as f:
     for line in f:
         genome, cluster, fasta = line.strip().split("\t")
+        genomes_info.append((genome, cluster))
         if genome in mlst:
             cluster_sts[cluster].append(mlst[genome])
 
-# determine dominant ST per cluster
-with open("${OUTDIR}/cluster_labels.tsv", "w") as out:
+# dominant ST per cluster
+cluster_to_label = {}
+with open(f"{outdir}/cluster_labels.tsv", "w") as out:
     out.write("cluster\tdominant_ST\tcount\ttotal\n")
     for cluster, sts in sorted(cluster_sts.items()):
         counter = Counter(sts)
         dominant_st, count = counter.most_common(1)[0]
-        label = f"SC_{cluster}_ST{dominant_st}"
+        cluster_to_label[cluster] = f"SC_{cluster}_ST{dominant_st}"
         out.write(f"{cluster}\t{dominant_st}\t{count}\t{len(sts)}\n")
 
-print("Cluster labels written.")
-PYEOF
+# Themisto input files
+with open(f"{outdir}/themisto_input.tsv", "w") as fasta_list, \
+     open(f"{outdir}/themisto_labels.tsv", "w") as label_list:
+    for genome, cluster in genomes_info:
+        label = cluster_to_label.get(cluster, cluster)
+        fasta_list.write(f"{outdir}/fastas/{genome}.fna\n")
+        label_list.write(f"{label}\n")
 
-# --- 6. Create Themisto-compatible label file ---
-echo "Creating Themisto label mapping..."
-python3 << 'PYEOF'
-import csv
-from collections import defaultdict, Counter
-
-# load cluster labels
-cluster_to_label = {}
-with open("${OUTDIR}/cluster_labels.tsv") as f:
-    next(f)  # skip header
-    for line in f:
-        cluster, st, count, total = line.strip().split("\t")
-        cluster_to_label[cluster] = f"SC_{cluster}_ST{st}"
-
-# load subsampled genomes
-with open("${OUTDIR}/themisto_input.tsv", "w") as fasta_list, \
-     open("${OUTDIR}/themisto_labels.tsv", "w") as label_list:
-    with open("${OUTDIR}/subsampled_genomes.tsv") as f:
-        for line in f:
-            genome, cluster, fasta_path = line.strip().split("\t")
-            label = cluster_to_label.get(cluster, cluster)
-            fasta_list.write(f"${OUTDIR}/fastas/{genome}.fna\n")
-            label_list.write(f"{label}\n")
-
+print(f"Created labels for {len(cluster_to_label)} clusters")
 print("Themisto input files created.")
 PYEOF
 
