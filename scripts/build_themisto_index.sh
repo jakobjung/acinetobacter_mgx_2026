@@ -17,7 +17,7 @@ SUBSAMPLE_DIR=${PROJDIR}/analysis/subsample
 OUTDIR=${PROJDIR}/analysis/themisto
 THREADS=${SLURM_CPUS_PER_TASK:-16}
 
-mkdir -p ${OUTDIR}
+mkdir -p ${OUTDIR} ${OUTDIR}/tmp
 
 # --- 1. Build Themisto index ---
 echo "Building Themisto index from $(wc -l < ${SUBSAMPLE_DIR}/themisto_input.tsv) genomes..."
