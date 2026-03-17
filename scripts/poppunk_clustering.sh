@@ -3,7 +3,7 @@
 #SBATCH --partition=cpu
 #SBATCH --qos=long
 #SBATCH --mem=128G
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=16
 #SBATCH --time=2-00:00:00
 #SBATCH --output=poppunk_ab_%j.log
 
@@ -11,7 +11,7 @@ set -euo pipefail
 
 # activate poppunk environment
 source $(conda info --base)/etc/profile.d/conda.sh
-conda activate poppunk
+conda activate poppunk3
 
 PROJDIR=/vol/projects/jjung/acinetobacter_mgx_2026
 GENOMEDIR=${PROJDIR}/data/reference_sequences/ab_genomes/ncbi_dataset
