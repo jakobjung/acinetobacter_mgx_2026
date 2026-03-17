@@ -8,6 +8,10 @@
 
 set -euo pipefail
 
+# activate poppunk environment
+source $(conda info --base)/etc/profile.d/conda.sh
+conda activate poppunk
+
 PROJDIR=/vol/projects/jjung/acinetobacter_mgx_2026
 GENOMEDIR=${PROJDIR}/data/reference_sequences/ab_genomes/ncbi_dataset
 OUTDIR=${PROJDIR}/analysis/poppunk
