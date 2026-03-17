@@ -22,10 +22,12 @@ mkdir -p ${OUTDIR}
 # --- 1. Build Themisto index ---
 echo "Building Themisto index from $(wc -l < ${SUBSAMPLE_DIR}/themisto_input.tsv) genomes..."
 themisto build \
+    -k 31 \
     --input-file ${SUBSAMPLE_DIR}/themisto_input.txt \
     --index-prefix ${OUTDIR}/ab_index \
     --temp-dir ${OUTDIR}/tmp \
-    --n-threads ${THREADS}
+    --n-threads ${THREADS} \
+    --file-colors
 
 echo "Index built."
 
