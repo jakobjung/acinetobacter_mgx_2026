@@ -35,7 +35,7 @@ echo "Creating PopPUNK database..."
 poppunk --create-db \
     --output ${OUTDIR}/ab_db \
     --r-files ${INPUT_LIST} \
-    --batch-size 2000 \
+    --overwrite \
     --threads ${THREADS}
 
 # --- 3. Fit model (BGMM by default, use --fit-model bgmm) ---
