@@ -43,6 +43,7 @@ echo "Fitting PopPUNK model..."
 poppunk --fit-model bgmm \
     --ref-db ${OUTDIR}/ab_db \
     --output ${OUTDIR}/ab_clusters \
+    --no-plot \
     --threads ${THREADS}
 
 # --- 4. Summary ---
