@@ -11,7 +11,7 @@ set -euo pipefail
 
 # activate poppunk environment
 source $(conda info --base)/etc/profile.d/conda.sh
-conda activate poppunk3
+conda activate poppunk
 
 PROJDIR=/vol/projects/jjung/acinetobacter_mgx_2026
 GENOMEDIR=${PROJDIR}/data/reference_sequences/ab_genomes/ncbi_dataset
@@ -31,23 +31,16 @@ else
     echo "Found $(wc -l < ${INPUT_LIST}) genomes"
 fi
 
-# --- 2. Create PopPUNK database (sketch genomes + calculate distances) ---
-echo "Creating PopPUNK database..."
-poppunk --create-db \
-    --output ${OUTDIR}/ab_db \
-    --r-files ${INPUT_LIST} \
-    --threads ${THREADS}
-
-# --- 3. Fit model (BGMM by default, use --fit-model bgmm) ---
-echo "Fitting PopPUNK model..."
-poppunk --fit-model bgmm \
+# --- 2. Fit model with DBSCAN (database already created) ---
+echo "Fitting PopPUNK DBSCAN model..."
+poppunk --fit-model dbscan \
     --ref-db ${OUTDIR}/ab_db \
-    --output ${OUTDIR}/ab_clusters \
+    --output ${OUTDIR}/ab_clusters_dbscan \
     --no-plot \
     --threads ${THREADS}
 
 # --- 4. Summary ---
-CLUSTER_FILE=${OUTDIR}/ab_clusters/ab_clusters_clusters.csv
+CLUSTER_FILE=${OUTDIR}/ab_clusters_dbscan/ab_clusters_dbscan_clusters.csv
 echo "Clustering complete."
 echo "Total genomes: $(tail -n +2 ${CLUSTER_FILE} | wc -l)"
 echo "Total sequence clusters: $(tail -n +2 ${CLUSTER_FILE} | cut -d, -f2 | sort -u | wc -l)"
