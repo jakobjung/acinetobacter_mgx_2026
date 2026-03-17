@@ -31,11 +31,16 @@ done
 echo "Found $(wc -l < ${INPUT_LIST}) genomes"
 
 # --- 2. Create PopPUNK database (sketch genomes + calculate distances) ---
-echo "Creating PopPUNK database..."
-poppunk --create-db \
-    --output ${OUTDIR}/ab_db \
-    --r-files ${INPUT_LIST} \
-    --threads ${THREADS}
+if [ -f "${OUTDIR}/ab_db/ab_db.h5" ]; then
+    echo "Sketch database already exists, skipping --create-db"
+else
+    echo "Creating PopPUNK database..."
+    poppunk --create-db \
+        --output ${OUTDIR}/ab_db \
+        --r-files ${INPUT_LIST} \
+        --batch-size 2000 \
+        --threads ${THREADS}
+fi
 
 # --- 3. Fit model (BGMM by default, use --fit-model bgmm) ---
 echo "Fitting PopPUNK model..."
