@@ -2,7 +2,7 @@
 #SBATCH --job-name=poppunk_ab
 #SBATCH --partition=cpu
 #SBATCH --qos=long
-#SBATCH --mem=32G
+#SBATCH --mem=128G
 #SBATCH --cpus-per-task=16
 #SBATCH --output=poppunk_ab_%j.log
 
