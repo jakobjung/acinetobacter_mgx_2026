@@ -23,7 +23,7 @@ mkdir -p ${OUTDIR} ${PROJDIR}/data/reference_sequences/hg38
 # --- 1. Download and index hg38 if not present ---
 if [ ! -f "${HG38_IDX}.1.bt2" ]; then
     echo "Downloading hg38 bowtie2 index..."
-    wget -q https://genome-idx.s3.amazonaws.com/bt2/GRCh38_noalt_as.zip \
+    wget https://genome-idx.s3.amazonaws.com/bt/GRCh38_noalt_as.zip \
         -O ${PROJDIR}/data/reference_sequences/hg38/hg38.zip
     unzip -o ${PROJDIR}/data/reference_sequences/hg38/hg38.zip \
         -d ${PROJDIR}/data/reference_sequences/hg38/
