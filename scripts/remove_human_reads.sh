@@ -15,26 +15,17 @@ conda activate abaum
 PROJDIR=/vol/projects/jjung/acinetobacter_mgx_2026
 FASTQDIR=${PROJDIR}/data/fastq
 OUTDIR=${PROJDIR}/data/fastq_clean
-HG38_IDX=${PROJDIR}/data/reference_sequences/hg38/hg38
+HG38_IDX=${PROJDIR}/data/reference_sequences/hg38/GRCh38_noalt_as/GRCh38_noalt_as
 THREADS=${SLURM_CPUS_PER_TASK:-8}
 
 mkdir -p ${OUTDIR} ${PROJDIR}/data/reference_sequences/hg38
 
 # --- 1. Download and index hg38 if not present ---
 if [ ! -f "${HG38_IDX}.1.bt2" ]; then
-    echo "Downloading hg38 bowtie2 index..."
-    wget https://genome-idx.s3.amazonaws.com/bt/GRCh38_noalt_as.zip \
-        -O ${PROJDIR}/data/reference_sequences/hg38/hg38.zip
-    unzip -o ${PROJDIR}/data/reference_sequences/hg38/hg38.zip \
-        -d ${PROJDIR}/data/reference_sequences/hg38/
-    rm ${PROJDIR}/data/reference_sequences/hg38/hg38.zip
-    # rename to hg38 prefix
-    for f in ${PROJDIR}/data/reference_sequences/hg38/GRCh38_noalt_as.*; do
-        mv "$f" "${f/GRCh38_noalt_as/hg38}"
-    done
-    echo "hg38 index ready."
+    echo "ERROR: hg38 bowtie2 index not found at ${HG38_IDX}"
+    exit 1
 else
-    echo "hg38 index already exists."
+    echo "hg38 index found."
 fi
 
 # --- 2. Remove human reads from each sample ---
