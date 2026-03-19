@@ -3,7 +3,7 @@
 #SBATCH --partition=cpu
 #SBATCH --qos=long
 #SBATCH --mem=16G
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=32
 #SBATCH --time=2-00:00:00
 #SBATCH --output=rm_human_%j.log
 
@@ -46,7 +46,7 @@ for CRA in CRA010962 CRA010735 CRA010639; do
             -x ${HG38_IDX} \
             -U ${fq} \
             --threads ${THREADS} \
-            --very-sensitive \
+            --sensitive \
             --un-gz ${OUTDIR}/${CRA}/${sample}.fastq.gz \
             -S /dev/null \
             2>> ${OUTDIR}/${CRA}/${sample}.bowtie2.log
