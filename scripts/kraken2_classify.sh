@@ -35,8 +35,9 @@ fi
 # --- 2. Run Kraken2 on all samples ---
 echo "Running Kraken2 classification..."
 for CRA in CRA010962 CRA010735 CRA010639; do
-    for fq in ${FASTQDIR}/${CRA}/*/*.fastq.gz; do
-        sample=$(basename ${fq} .fastq.gz)
+    for fq in ${FASTQDIR}/${CRA}/*/*.{fastq.gz,fq.gz}; do
+        [ -f "${fq}" ] || continue
+        sample=$(basename ${fq} | sed 's/\.fastq\.gz$//; s/\.fq\.gz$//')
         echo "Processing ${CRA}/${sample}..."
 
         kraken2 \
