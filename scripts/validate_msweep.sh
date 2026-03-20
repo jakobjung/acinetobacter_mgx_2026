@@ -19,47 +19,17 @@ FASTQDIR=${PROJDIR}/data/fastq_clean
 OUTDIR=${PROJDIR}/analysis/validation
 THREADS=${SLURM_CPUS_PER_TASK:-8}
 
-mkdir -p ${OUTDIR}
+mkdir -p ${OUTDIR}/ref_sketches ${OUTDIR}/bin_sketches
 
-# --- 1. Extract binned reads from index files ---
-echo "Extracting binned reads..."
-for sample_dir in ${MSWEEP_DIR}/*/; do
-    sample=$(basename ${sample_dir})
-    for bin_file in ${sample_dir}/*.bin; do
-        [ -f "${bin_file}" ] || continue
-        sc=$(basename ${bin_file} .bin)
-        outfq=${OUTDIR}/${sample}_${sc}.fastq.gz
-
-        if [ -f "${outfq}" ]; then
-            continue
-        fi
-
-        # find the clean fastq for this sample
-        fq=$(find ${FASTQDIR} -name "${sample}.fastq.gz" -o -name "${sample}.fq.gz" 2>/dev/null | head -1)
-        if [ -z "${fq}" ]; then
-            continue
-        fi
-
-        # extract reads using seqtk (bin file has 0-based read indices)
-        seqtk subseq ${fq} ${bin_file} | gzip > ${outfq}
-    done
-done
-echo "Extraction done."
-
-# --- 2. Sketch reference genomes per SC with mash ---
-echo "Sketching reference genomes..."
-MASH_REF_DIR=${OUTDIR}/ref_sketches
-mkdir -p ${MASH_REF_DIR}
-
-# build per-SC combined reference fastas
-python3 - ${SUBSAMPLE_DIR} ${MASH_REF_DIR} << 'PYEOF'
+# --- 1. Sketch reference genomes per SC ---
+echo "Sketching reference genomes per SC..."
+python3 - ${SUBSAMPLE_DIR} ${OUTDIR}/ref_sketches << 'PYEOF'
 import sys
 from collections import defaultdict
 
 subsample_dir = sys.argv[1]
-mash_ref_dir = sys.argv[2]
+ref_dir = sys.argv[2]
 
-# load cluster labels
 cluster_to_label = {}
 with open(f"{subsample_dir}/cluster_labels.tsv") as f:
     next(f)
@@ -67,7 +37,6 @@ with open(f"{subsample_dir}/cluster_labels.tsv") as f:
         parts = line.strip().split("\t")
         cluster_to_label[parts[0]] = f"SC_{parts[0]}_ST{parts[1]}"
 
-# load subsampled genomes
 sc_fastas = defaultdict(list)
 with open(f"{subsample_dir}/subsampled_genomes.tsv") as f:
     for line in f:
@@ -75,60 +44,109 @@ with open(f"{subsample_dir}/subsampled_genomes.tsv") as f:
         label = cluster_to_label.get(cluster, f"SC_{cluster}")
         sc_fastas[label].append(f"{subsample_dir}/fastas/{genome}.fna")
 
-# write per-SC fasta lists
 for sc, fastas in sc_fastas.items():
-    with open(f"{mash_ref_dir}/{sc}_refs.txt", "w") as out:
+    with open(f"{ref_dir}/{sc}_refs.txt", "w") as out:
         for f in fastas:
             out.write(f"{f}\n")
 
 print(f"Created ref lists for {len(sc_fastas)} SCs")
 PYEOF
 
-# sketch each SC's references
-for ref_list in ${MASH_REF_DIR}/*_refs.txt; do
+for ref_list in ${OUTDIR}/ref_sketches/*_refs.txt; do
     sc=$(basename ${ref_list} _refs.txt)
-    if [ ! -f "${MASH_REF_DIR}/${sc}.msh" ]; then
-        mash sketch -l ${ref_list} -o ${MASH_REF_DIR}/${sc} -s 10000 2>/dev/null
+    if [ ! -f "${OUTDIR}/ref_sketches/${sc}.msh" ]; then
+        mash sketch -l ${ref_list} -o ${OUTDIR}/ref_sketches/${sc} -s 10000 2>/dev/null
     fi
 done
 echo "Reference sketching done."
 
-# --- 3. Compare binned reads to their assigned SC references ---
+# --- 2. Extract binned reads and sketch them ---
+echo "Extracting and sketching binned reads..."
+for sample_dir in ${MSWEEP_DIR}/*/; do
+    sample=$(basename ${sample_dir})
+
+    for bin_file in ${sample_dir}/*.bin; do
+        [ -f "${bin_file}" ] || continue
+        sc=$(basename ${bin_file} .bin)
+
+        # skip if already sketched
+        if [ -f "${OUTDIR}/bin_sketches/${sample}_${sc}.msh" ]; then
+            continue
+        fi
+
+        # find the clean fastq
+        fq=$(find ${FASTQDIR} -name "${sample}.fastq.gz" -o -name "${sample}.fq.gz" 2>/dev/null | head -1)
+        [ -z "${fq}" ] && continue
+
+        # extract reads by index using python (fast)
+        python3 - ${fq} ${bin_file} ${OUTDIR}/bin_sketches/${sample}_${sc}.fastq << 'PYEOF'
+import sys, gzip
+
+fq_path = sys.argv[1]
+bin_path = sys.argv[2]
+out_path = sys.argv[3]
+
+# load indices (assume 1-based from mSWEEP)
+indices = set()
+with open(bin_path) as f:
+    for line in f:
+        indices.add(int(line.strip()))
+
+# extract reads
+opener = gzip.open if fq_path.endswith('.gz') else open
+with opener(fq_path, 'rt') as fq, open(out_path, 'w') as out:
+    read_num = 0
+    for i, line in enumerate(fq):
+        if i % 4 == 0:
+            read_num += 1
+            keep = read_num in indices
+        if keep:
+            out.write(line)
+PYEOF
+
+        # sketch the extracted reads
+        num_reads=$(wc -l < ${OUTDIR}/bin_sketches/${sample}_${sc}.fastq)
+        num_reads=$((num_reads / 4))
+
+        if [ "${num_reads}" -gt 10 ]; then
+            mash sketch ${OUTDIR}/bin_sketches/${sample}_${sc}.fastq \
+                -o ${OUTDIR}/bin_sketches/${sample}_${sc} -s 10000 -r 2>/dev/null
+        fi
+
+        # cleanup fastq to save space
+        rm -f ${OUTDIR}/bin_sketches/${sample}_${sc}.fastq
+    done
+done
+echo "Binned read sketching done."
+
+# --- 3. Compare binned reads to their SC references ---
 echo ""
 echo "=== Validation Results ==="
-echo "sample	SC	mash_dist	p_value	num_reads	verdict"
+printf "sample\tSC\tabundance\tmash_dist\tp_value\tverdict\n" | tee ${OUTDIR}/validation_summary.tsv
 
-for binned_fq in ${OUTDIR}/*_SC_*.fastq.gz; do
-    [ -f "${binned_fq}" ] || continue
+for sketch in ${OUTDIR}/bin_sketches/*.msh; do
+    [ -f "${sketch}" ] || continue
 
-    filename=$(basename ${binned_fq} .fastq.gz)
-    # parse sample and SC from filename (e.g., CRR766456_SC_1_ST2)
+    filename=$(basename ${sketch} .msh)
     sample=$(echo ${filename} | sed 's/_SC_.*//')
-    sc=$(echo ${filename} | sed 's/^[^_]*_//' | sed 's/^//')
+    sc=$(echo ${filename} | sed "s/^${sample}_//")
 
-    # check read count
-    num_reads=$(zcat ${binned_fq} | awk 'END{print NR/4}')
-    if [ "${num_reads}" -lt 10 ]; then
-        echo "${sample}	${sc}	NA	NA	${num_reads}	too_few_reads"
-        continue
-    fi
-
-    # sketch the binned reads
-    mash sketch ${binned_fq} -o ${OUTDIR}/${filename} -s 10000 -r 2>/dev/null
+    # get abundance from mSWEEP
+    abun=$(awk -F'\t' -v sc="${sc}" '!/^#/ && $1==sc {print $2}' ${MSWEEP_DIR}/${sample}/msweep_abundances.txt)
 
     # find matching reference sketch
-    ref_sketch=${MASH_REF_DIR}/${sc}.msh
+    ref_sketch=${OUTDIR}/ref_sketches/${sc}.msh
     if [ ! -f "${ref_sketch}" ]; then
-        echo "${sample}	${sc}	NA	NA	${num_reads}	no_ref_sketch"
+        printf "${sample}\t${sc}\t${abun}\tNA\tNA\tno_ref\n" | tee -a ${OUTDIR}/validation_summary.tsv
         continue
     fi
 
-    # compute mash distance
-    result=$(mash dist ${ref_sketch} ${OUTDIR}/${filename}.msh 2>/dev/null | sort -t$'\t' -k3 -n | head -1)
+    # compute mash distance (take closest reference)
+    result=$(mash dist ${ref_sketch} ${sketch} 2>/dev/null | sort -t$'\t' -k3 -n | head -1)
     dist=$(echo "${result}" | cut -f3)
     pval=$(echo "${result}" | cut -f4)
 
-    # verdict: dist < 0.05 = high confidence, 0.05-0.1 = moderate, > 0.1 = likely false positive
+    # verdict
     if (( $(echo "${dist} < 0.05" | bc -l) )); then
         verdict="PASS"
     elif (( $(echo "${dist} < 0.1" | bc -l) )); then
@@ -137,8 +155,15 @@ for binned_fq in ${OUTDIR}/*_SC_*.fastq.gz; do
         verdict="FAIL"
     fi
 
-    echo "${sample}	${sc}	${dist}	${pval}	${num_reads}	${verdict}"
-done | tee ${OUTDIR}/validation_summary.tsv
+    printf "${sample}\t${sc}\t${abun}\t${dist}\t${pval}\t${verdict}\n" | tee -a ${OUTDIR}/validation_summary.tsv
+done
 
 echo ""
-echo "Done. Results in ${OUTDIR}/validation_summary.tsv"
+echo "=== Summary ==="
+echo "PASS (high confidence):"
+grep "PASS" ${OUTDIR}/validation_summary.tsv | sort -t$'\t' -k3 -rn
+echo ""
+echo "FAIL (likely false positive):"
+grep "FAIL" ${OUTDIR}/validation_summary.tsv | sort -t$'\t' -k3 -rn
+echo ""
+echo "Done."
