@@ -39,40 +39,30 @@ for CRA in CRA010962 CRA010735 CRA010639; do
 
         # --- Themisto pseudoalign ---
         echo "  Pseudoaligning..."
+        mkdir -p ${SAMPLE_DIR}/tmp
         themisto pseudoalign \
-            --index-prefix ${THEMISTO_IDX} \
-            --query-file ${fq} \
+            -i ${THEMISTO_IDX} \
+            -q ${fq} \
             --rc \
             --temp-dir ${SAMPLE_DIR}/tmp \
             --n-threads ${THREADS} \
-            --out-file ${SAMPLE_DIR}/pseudoalignments.txt
+            --sort-output \
+            -o ${SAMPLE_DIR}/pseudoalignments.txt
 
-        # --- mSWEEP abundance estimation ---
-        echo "  Estimating abundances with mSWEEP..."
+        # --- mSWEEP abundance estimation + read binning ---
+        echo "  Running mSWEEP..."
         mSWEEP \
-            --themisto-1 ${SAMPLE_DIR}/pseudoalignments.txt \
-            -i ${THEMISTO_IDX} \
-            --grouping-list ${LABELS} \
+            -i ${LABELS} \
+            --themisto ${SAMPLE_DIR}/pseudoalignments.txt \
             -o ${SAMPLE_DIR}/msweep \
-            -t ${THREADS}
-
-        # rename output
-        mv ${SAMPLE_DIR}/msweep_abundances.txt ${SAMPLE_DIR}/msweep_abundances.txt 2>/dev/null || true
-
-        # --- mGEMS read binning ---
-        echo "  Binning reads with mGEMS..."
-        mGEMS extract \
-            --themisto-1 ${SAMPLE_DIR}/pseudoalignments.txt \
-            -r ${fq} \
-            --index ${THEMISTO_IDX} \
-            --groups ${LABELS} \
-            --probs ${SAMPLE_DIR}/msweep_probs.txt \
-            -o ${SAMPLE_DIR}/bins \
-            --min-abundance 0.01
+            -t ${THREADS} \
+            --bin-reads \
+            --min-abundance 0.01 \
+            --write-probs
 
         # --- Summary for this sample ---
         echo "  Top SCs in ${sample}:"
-        sort -t$'\t' -k2 -rn ${SAMPLE_DIR}/msweep_abundances.txt | head -5
+        sort -t$'\t' -k2 -rn ${SAMPLE_DIR}/msweep_abundances.txt 2>/dev/null | head -5 || echo "  (no abundances file found)"
 
         # cleanup temp
         rm -rf ${SAMPLE_DIR}/tmp
@@ -97,3 +87,5 @@ for dir in ${OUTDIR}/*/; do
 done
 
 echo "Done."
+
+
