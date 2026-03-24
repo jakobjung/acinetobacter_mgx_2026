@@ -15,16 +15,23 @@ OUTDIR=${PROJDIR}/data/crab_vap_test
 mkdir -p ${OUTDIR}
 
 # Download 5 tracheal metagenome samples from PRJNA681291 (CRAB VAP study)
-# PE WGS from endotracheal aspirates, NovaSeq
-for SRR in SRR13160906 SRR13160908 SRR13160909 SRR13160924 SRR13160943; do
+# Using exact ENA FTP URLs
+declare -A URLS
+URLS[SRR13160906]="ftp.sra.ebi.ac.uk/vol1/fastq/SRR131/006/SRR13160906"
+URLS[SRR13160908]="ftp.sra.ebi.ac.uk/vol1/fastq/SRR131/008/SRR13160908"
+URLS[SRR13160909]="ftp.sra.ebi.ac.uk/vol1/fastq/SRR131/009/SRR13160909"
+URLS[SRR13160924]="ftp.sra.ebi.ac.uk/vol1/fastq/SRR131/024/SRR13160924"
+URLS[SRR13160943]="ftp.sra.ebi.ac.uk/vol1/fastq/SRR131/043/SRR13160943"
+
+for SRR in "${!URLS[@]}"; do
     if [ -f "${OUTDIR}/${SRR}_1.fastq.gz" ]; then
         echo "Skipping ${SRR} (already downloaded)"
         continue
     fi
     echo "Downloading ${SRR}..."
-    wget -q -P ${OUTDIR} \
-        ftp://ftp.sra.ebi.ac.uk/vol1/fastq/SRR131/${SRR: -3}/${SRR}/${SRR}_1.fastq.gz \
-        ftp://ftp.sra.ebi.ac.uk/vol1/fastq/SRR131/${SRR: -3}/${SRR}/${SRR}_2.fastq.gz
+    wget -c -P ${OUTDIR} \
+        ftp://${URLS[$SRR]}/${SRR}_1.fastq.gz \
+        ftp://${URLS[$SRR]}/${SRR}_2.fastq.gz
     echo "${SRR} done."
 done
 
