@@ -32,3 +32,4 @@ done < ${URLFILE}
 echo "All downloads complete."
 ls -lh ${OUTDIR}/ | tail -5
 echo "Total files: $(ls ${OUTDIR}/*.fastq.gz | wc -l)"
+

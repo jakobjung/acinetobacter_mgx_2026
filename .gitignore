@@ -28,3 +28,5 @@ data/jobs/**
 data/202**
 CLAUDE.md
 .idea/
+themisto_linux*/
+build/
