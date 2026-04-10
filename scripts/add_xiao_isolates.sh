@@ -62,10 +62,12 @@ with open(f"{outdir}/mlst_oxford.tsv") as f:
     for line in f:
         parts = line.strip().split("\t")
         genome_path = parts[0]
-        accession = genome_path.split("/")[-1].replace(".fna", "").replace("_genomic", "")
-        # skip GCF duplicates, only use GCA
-        if not accession.startswith("GCA_"):
+        # extract accession from directory path (e.g. .../GCA_022815885.1/...)
+        path_parts = genome_path.split("/")
+        accession = [p for p in path_parts if p.startswith("GCA_")]
+        if not accession:
             continue
+        accession = accession[0]
         # extract gyrB and gpi alleles
         gyrB = re.search(r'Oxf_gyrB\((\d+)\)', line)
         gpi = re.search(r'Oxf_gpi\((\d+)\)', line)
@@ -101,7 +103,7 @@ with open(f"{new_subsample}/subsampled_genomes.tsv", "a") as sg:
         cluster_id = max_cluster
 
         for acc in accessions[:30]:
-            fasta_paths = glob.glob(f"{outdir}/ncbi_dataset/ncbi_dataset/data/{acc}*/*.fna")
+            fasta_paths = glob.glob(f"{outdir}/ncbi_dataset/ncbi_dataset/data/{acc}/*.fna")
             if not fasta_paths:
                 continue
             fasta = fasta_paths[0]
