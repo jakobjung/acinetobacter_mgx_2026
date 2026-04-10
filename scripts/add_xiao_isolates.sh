@@ -32,22 +32,10 @@ else
     echo "Xiao isolate genomes already downloaded."
 fi
 
-# --- 2. Run MLST (both Pasteur and Oxford schemes) ---
-echo "Running MLST (Pasteur scheme)..."
-mlst --threads ${THREADS} ${OUTDIR}/ncbi_dataset/ncbi_dataset/data/*/*.fna \
-    > ${OUTDIR}/mlst_pasteur.tsv
-
-echo "Running MLST (Oxford scheme)..."
-mlst --scheme abaumannii --threads ${THREADS} ${OUTDIR}/ncbi_dataset/ncbi_dataset/data/*/*.fna \
-    > ${OUTDIR}/mlst_oxford.tsv
-
-echo ""
-echo "=== Pasteur ST distribution ==="
-awk -F'\t' '{print $3}' ${OUTDIR}/mlst_pasteur.tsv | sort | uniq -c | sort -rn
-
-echo ""
-echo "=== Oxford ST distribution ==="
-awk -F'\t' '{print $3}' ${OUTDIR}/mlst_oxford.tsv | sort | uniq -c | sort -rn
+# --- 2. MLST already run manually, skip ---
+echo "MLST results already available."
+echo "Pasteur: $(wc -l < ${OUTDIR}/mlst_pasteur.tsv) isolates"
+echo "Oxford: $(wc -l < ${OUTDIR}/mlst_oxford.tsv) isolates"
 
 # --- 3. Create combined reference panel ---
 echo ""
@@ -60,33 +48,37 @@ cp ${SUBSAMPLE_DIR}/fastas/*.fna ${NEW_SUBSAMPLE}/fastas/
 cp ${SUBSAMPLE_DIR}/subsampled_genomes.tsv ${NEW_SUBSAMPLE}/subsampled_genomes.tsv
 cp ${SUBSAMPLE_DIR}/cluster_labels.tsv ${NEW_SUBSAMPLE}/cluster_labels.tsv
 
-# add Xiao isolates as new SCs based on their Oxford ST
+# add Xiao isolates as new SCs based on gyrB+gpi allelic profile
 python3 - ${OUTDIR} ${NEW_SUBSAMPLE} << 'PYEOF'
-import sys
+import sys, re, glob, shutil
 from collections import defaultdict
 
 outdir = sys.argv[1]
 new_subsample = sys.argv[2]
 
-# load Oxford MLST results
-oxford_sts = {}
+# load Oxford MLST results — group by gyrB + gpi profile
+isolate_profiles = {}
 with open(f"{outdir}/mlst_oxford.tsv") as f:
     for line in f:
         parts = line.strip().split("\t")
         genome_path = parts[0]
-        st = parts[2]
         accession = genome_path.split("/")[-1].replace(".fna", "").replace("_genomic", "")
-        oxford_sts[accession] = st
+        # skip GCF duplicates, only use GCA
+        if not accession.startswith("GCA_"):
+            continue
+        # extract gyrB and gpi alleles
+        gyrB = re.search(r'Oxf_gyrB\((\d+)\)', line)
+        gpi = re.search(r'Oxf_gpi\((\d+)\)', line)
+        if gyrB and gpi:
+            profile = f"gyrB{gyrB.group(1)}_gpi{gpi.group(1)}"
+        else:
+            profile = "unknown"
+        isolate_profiles[accession] = profile
 
-# load Pasteur MLST results
-pasteur_sts = {}
-with open(f"{outdir}/mlst_pasteur.tsv") as f:
-    for line in f:
-        parts = line.strip().split("\t")
-        genome_path = parts[0]
-        st = parts[2]
-        accession = genome_path.split("/")[-1].replace(".fna", "").replace("_genomic", "")
-        pasteur_sts[accession] = st
+# group by profile
+profile_groups = defaultdict(list)
+for acc, profile in isolate_profiles.items():
+    profile_groups[profile].append(acc)
 
 # find existing max cluster number
 max_cluster = 0
@@ -101,24 +93,14 @@ with open(f"{new_subsample}/cluster_labels.tsv") as f:
         except ValueError:
             pass
 
-# group Xiao isolates by Oxford ST
-st_groups = defaultdict(list)
-for acc, st in oxford_sts.items():
-    st_groups[st].append(acc)
-
-# add new SCs for each Oxford ST
-import glob, shutil, os
-
+# add new SCs
 new_clusters = []
 with open(f"{new_subsample}/subsampled_genomes.tsv", "a") as sg:
-    for st, accessions in sorted(st_groups.items()):
+    for profile, accessions in sorted(profile_groups.items()):
         max_cluster += 1
         cluster_id = max_cluster
-        pasteur_st = pasteur_sts.get(accessions[0], "-")
 
-        # subsample max 30
         for acc in accessions[:30]:
-            # find the fasta
             fasta_paths = glob.glob(f"{outdir}/ncbi_dataset/ncbi_dataset/data/{acc}*/*.fna")
             if not fasta_paths:
                 continue
@@ -127,16 +109,15 @@ with open(f"{new_subsample}/subsampled_genomes.tsv", "a") as sg:
             shutil.copy(fasta, dest)
             sg.write(f"XIAO_{acc}\t{cluster_id}\t{dest}\n")
 
-        new_clusters.append((cluster_id, st, pasteur_st, len(accessions)))
+        new_clusters.append((cluster_id, profile, len(accessions)))
 
-# append to cluster labels
 with open(f"{new_subsample}/cluster_labels.tsv", "a") as cl:
-    for cluster_id, oxford_st, pasteur_st, count in new_clusters:
-        cl.write(f"{cluster_id}\tOxf{oxford_st}_Pas{pasteur_st}\t{count}\t{count}\n")
+    for cluster_id, profile, count in new_clusters:
+        cl.write(f"{cluster_id}\tXIAO_{profile}\t{min(count,30)}\t{min(count,30)}\n")
 
 print(f"Added {len(new_clusters)} new SCs from Xiao et al. isolates")
-for c, ost, pst, n in new_clusters:
-    print(f"  SC_{c}: Oxford ST{ost} / Pasteur ST{pst} ({n} isolates)")
+for c, profile, n in new_clusters:
+    print(f"  SC_{c}: {profile} ({n} isolates, max 30 used)")
 PYEOF
 
 # --- 4. Create new Themisto input files ---
