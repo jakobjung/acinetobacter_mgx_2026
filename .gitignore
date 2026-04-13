@@ -30,3 +30,11 @@ CLAUDE.md
 .idea/
 themisto_linux*/
 build/
+analysis/
+*.log
+*.nwk
+*.phylip
+*.msh
+*.fna
+*.tsv
+!analysis/summary_v2.tsv
