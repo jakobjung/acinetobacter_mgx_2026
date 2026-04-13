@@ -36,5 +36,3 @@ analysis/
 *.phylip
 *.msh
 *.fna
-*.tsv
-!analysis/summary_v2.tsv
