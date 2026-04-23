@@ -1,6 +1,6 @@
 # Metagenomics-based detection of _Acinetobacter baumannii_ poly-strain co-colonisation
 
-Detection of within-GC2 sub-lineage diversity in carbapenem-resistant _A. baumannii_ (CRAB) from tracheal aspirate metagenomics, using the Themisto/mSWEEP pipeline.
+Detection of within-GC2 sub-lineage diversity in carbapenem-resistant _A. baumannii_ (CRAB) from tracheal aspirate metagenomics, using the Themisto/mSWEEP pipeline with Kraken2 species-level pre-filtering.
 
 ## Dataset
 
@@ -8,34 +8,32 @@ Re-analysis of tracheal aspirate shotgun metagenomics from Xiao et al. 2022 (PMI
 
 - **Sequencing**: Illumina NovaSeq 6000, PE 150bp
 - **Sample type**: Endotracheal deep aspirates from mechanically ventilated ICU patients
-- **Metagenomics accession**: PRJNA681291 (49 WGS paired-end samples)
-- **WGS isolates accession**: PRJNA679997 (46 CRAB isolates from the same patients)
+- **Metagenomics accession**: PRJNA681291
+- **WGS isolates accession**: PRJNA679997 (46 CRAB isolates)
 
 ## Pipeline
 
-1. **Human read removal** — bowtie2 (sensitive mode) against GRCh38, PE mode
-2. **Reference database construction** — BacPop PopPUNK _A. baumannii_ database (8,263 isolates, 420 SCs), subsampled to max 30 genomes/SC (669 genomes), labelled by Pasteur MLST dominant ST
-3. **Reference panel augmentation (v2)** — Added 46 Xiao et al. isolate genomes grouped into 13 new SCs by Oxford MLST gyrB+gpi allelic profile (715 genomes total)
-4. **Themisto index** — Colored de Bruijn graph (k=31) built from the 715-genome reference panel
-5. **Themisto pseudoalignment** — PE reads pseudoaligned against index (separate R1/R2, sorted output)
-6. **mSWEEP** — Probabilistic abundance estimation per SC, with read binning (--min-abundance 0.01)
-7. **Mash validation** — Mash distance comparison of binned reads against SC reference genomes
+1. **Human read removal** — Bowtie2 against GRCh38 (PE sensitive mode)
+2. **Species-level filtering** — Kraken2 classification, extract _A. baumannii_ reads only (taxid 470)
+3. **Reference panel** — BacPop PopPUNK global panel (669 genomes) + 46 Xiao et al. isolates grouped by Oxford MLST (715 genomes total, 424 SCs)
+4. **Themisto pseudoalignment** — Coloured de Bruijn graph index (k=31), PE pseudoalignment
+5. **mSWEEP abundance estimation** — SC-level relative abundances with read binning (--min-abundance 0.01)
 
 ## Key findings
 
-- SC_327_ST255 (Pasteur) is the dominant background strain across all samples, including CRAB-negative controls — likely represents the local ICU outbreak clone (Oxford ST208)
-- CRAB-positive samples show additional GC2 sub-lineages (gyrB3_gpi97/ST208, gyrB38_gpi110/ST938, gyrB3_gpi157, gyrB3_gpi61, etc.) at 1-88% abundance
-- ~35/43 CRAB-positive samples have 2+ sub-lineages at >5%, indicating widespread within-GC2 poly-strain co-colonisation
-- CRAB-negative controls show only the background strain with no sub-lineage diversity
-- One sample (S3/SRR13160953) contains SC_26_ST46 at 32% — a non-GC2 lineage, representing a genuine cross-lineage co-infection
-- Culture-based typing (one colony per patient) reported only one Oxford ST per patient; metagenomics reveals additional sub-lineages missed by culture
+- CRAB-negative controls have essentially zero _A. baumannii_ reads (2-10 per sample)
+- ~11 of 43 CRAB-positive samples show genuine multi-strain co-colonisation (2+ Oxford STs at >5% abundance)
+- The dominant Oxford ST per sample matches culture-based WGS typing in nearly all cases
+- In several samples, culture detected a minor sub-lineage while metagenomics reveals the true dominant population plus additional sub-lineages
+- Sample S3 contains a non-GC2 lineage (Oxford ST1333, Pasteur ST46) at 71% alongside GC2 ST208 at 25% — a genuine cross-lineage co-infection missed by culture
+- CRAB-I (VAP) samples show more co-colonisation complexity than CRAB-C samples
 
 ## Methodology reference
 
-Pipeline approach based on Thorpe et al. 2024, "Pan-pathogen deep sequencing of nosocomial bacterial pathogens in Italy", _The Lancet Microbe_. DOI: 10.1016/S2666-5247(24)00113-7
+Pipeline approach based on Thorpe et al. 2024, _The Lancet Microbe_. DOI: 10.1016/S2666-5247(24)00113-7
 
 ## Repository structure
 
-- `scripts/` — SLURM pipeline scripts
-- `analysis/` — Summary output files
+- `scripts/` — SLURM pipeline scripts and R plotting code
+- `analysis/` — Summary output files, metadata, and methods description
 - `data/` — Input data references and download metadata
